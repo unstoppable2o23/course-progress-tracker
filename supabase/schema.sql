@@ -1,11 +1,26 @@
--- Progress Tracker Schema
--- Run in Supabase SQL editor
+-- CLEAN RESET: drop everything first, then recreate
+-- Run this entire script in Supabase SQL editor
 
--- Enable UUID generation
-create extension if not exists "uuid-ossp";
+drop view if exists public.student_view;
+drop table if exists public.live_sessions cascade;
+drop table if exists public.ucla_enrollments cascade;
+drop table if exists public.student_aliases cascade;
+drop table if exists public.students cascade;
+drop table if exists public.sources cascade;
+drop table if exists public.sync_logs cascade;
+drop table if exists public.app_users cascade;
+drop table if exists public.profiles cascade;
+drop table if exists public.categories cascade;
+drop table if exists public.completions cascade;
+drop table if exists public.completion_records cascade;
+drop table if exists public.student_rows cascade;
+drop function if exists public.normalize_phone(text) cascade;
+drop function if exists public.is_admin() cascade;
+drop function if exists public.is_active_user() cascade;
+drop function if exists public.is_supabase_configured() cascade;
 
 -- ── App Users (RBAC) ─────────────────────────────────────────────────
-create table if not exists public.app_users (
+create table public.app_users (
   id uuid primary key default uuid_generate_v4(),
   email text unique not null,
   name text not null,
@@ -15,7 +30,7 @@ create table if not exists public.app_users (
 );
 
 -- ── Sources (upload tracking) ─────────────────────────────────────────
-create table if not exists public.sources (
+create table public.sources (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   type text not null check (type in ('master', 'ucla', 'live')),
@@ -25,7 +40,7 @@ create table if not exists public.sources (
 );
 
 -- ── Students (master records) ────────────────────────────────────────
-create table if not exists public.students (
+create table public.students (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   primary_email text,
@@ -48,13 +63,12 @@ create table if not exists public.students (
   updated_at timestamptz not null default now()
 );
 
--- create index for fast lookup
-create index if not exists idx_students_email on public.students (lower(primary_email));
-create index if not exists idx_students_phone on public.students (phone);
-create index if not exists idx_students_name on public.students (lower(name));
+create index idx_students_email on public.students (lower(primary_email));
+create index idx_students_phone on public.students (phone);
+create index idx_students_name on public.students (lower(name));
 
 -- ── Aliases (secondary contacts) ─────────────────────────────────────
-create table if not exists public.student_aliases (
+create table public.student_aliases (
   id uuid primary key default uuid_generate_v4(),
   student_id uuid not null references public.students(id) on delete cascade,
   email text,
@@ -63,12 +77,12 @@ create table if not exists public.student_aliases (
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_aliases_student on public.student_aliases (student_id);
-create index if not exists idx_aliases_email on public.student_aliases (lower(email));
-create index if not exists idx_aliases_phone on public.student_aliases (phone);
+create index idx_aliases_student on public.student_aliases (student_id);
+create index idx_aliases_email on public.student_aliases (lower(email));
+create index idx_aliases_phone on public.student_aliases (phone);
 
 -- ── UCLA Enrollments ─────────────────────────────────────────────────
-create table if not exists public.ucla_enrollments (
+create table public.ucla_enrollments (
   id uuid primary key default uuid_generate_v4(),
   student_id uuid references public.students(id) on delete set null,
   email text,
@@ -84,7 +98,7 @@ create table if not exists public.ucla_enrollments (
 );
 
 -- ── Live Sessions ────────────────────────────────────────────────────
-create table if not exists public.live_sessions (
+create table public.live_sessions (
   id uuid primary key default uuid_generate_v4(),
   student_id uuid references public.students(id) on delete set null,
   session_name text not null check (session_name in ('Parent Counselling', 'Interpretation of Psychometric Test', 'Do''s and Don''ts of Career Counselling')),
@@ -93,10 +107,10 @@ create table if not exists public.live_sessions (
   created_at timestamptz not null default now()
 );
 
-create unique index if not exists idx_live_student_session on public.live_sessions (student_id, session_name);
+create unique index idx_live_student_session on public.live_sessions (student_id, session_name);
 
 -- ── Sync Logs ────────────────────────────────────────────────────────
-create table if not exists public.sync_logs (
+create table public.sync_logs (
   id uuid primary key default uuid_generate_v4(),
   status text not null default 'success',
   sources_processed int not null default 0,
@@ -110,10 +124,25 @@ create table if not exists public.sync_logs (
 
 -- ── Helper Functions ─────────────────────────────────────────────────
 
--- Normalize phone for matching (strip non-digits)
 create or replace function public.normalize_phone(p text)
 returns text language sql immutable as $$
   select regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g');
+$$;
+
+create or replace function public.is_admin()
+returns boolean language sql stable security definer as $$
+  select exists (
+    select 1 from public.app_users
+    where email = auth.email() and role = 'admin' and is_active
+  );
+$$;
+
+create or replace function public.is_active_user()
+returns boolean language sql stable security definer as $$
+  select exists (
+    select 1 from public.app_users
+    where email = auth.email() and is_active
+  );
 $$;
 
 -- ── Read Model View ──────────────────────────────────────────────────
@@ -178,25 +207,6 @@ alter table public.live_sessions enable row level security;
 alter table public.sources enable row level security;
 alter table public.sync_logs enable row level security;
 
--- Helper: check if current user is admin
-create or replace function public.is_admin()
-returns boolean language sql stable security definer as $$
-  select exists (
-    select 1 from public.app_users
-    where email = auth.email() and role = 'admin' and is_active
-  );
-$$;
-
--- Helper: check if current user is active (admin or staff)
-create or replace function public.is_active_user()
-returns boolean language sql stable security definer as $$
-  select exists (
-    select 1 from public.app_users
-    where email = auth.email() and is_active
-  );
-$$;
-
--- Policies: authenticated active users can read
 create policy "read users" on public.app_users for select using (public.is_active_user());
 create policy "admin write users" on public.app_users for all using (public.is_admin()) with check (public.is_admin());
 
