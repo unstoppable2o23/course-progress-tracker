@@ -13,10 +13,18 @@ export async function uploadSourceAction(
   _prev: UploadState,
   formData: FormData
 ): Promise<UploadState> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
+  } catch {
+    return { error: "Not authorized. Please log in as admin." };
+  }
 
   const file = formData.get("file") as File | null;
   if (!file) return { error: "No file selected." };
+
+  if (file.size > 4 * 1024 * 1024) {
+    return { error: "File is too large (max 4 MB). Please split into smaller files or remove unused rows/columns." };
+  }
 
   const type = String(formData.get("type")) as "master" | "ucla" | "live";
   const name = String(formData.get("name") || "").trim();
@@ -39,11 +47,18 @@ export async function uploadSourceAction(
   if (!parsed.rows.length) return { error: "No data rows found." };
 
   const supabase = await createServerClient();
-  const { data: source } = await supabase
-    .from("sources")
-    .insert({ name, type, file_name: file.name })
-    .select()
-    .single();
+  let source;
+  try {
+    const { data, error } = await supabase
+      .from("sources")
+      .insert({ name, type, file_name: file.name })
+      .select()
+      .single();
+    if (error) return { error: `Database error: ${error.message}` };
+    source = data;
+  } catch (e) {
+    return { error: `Insert failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
 
   const config: SourceConfig = {
     sourceId: source!.id,
