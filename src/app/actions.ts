@@ -30,7 +30,12 @@ export async function uploadSourceAction(
 
   if (!name || !emailColumn) return { error: "Name and email column are required." };
 
-  const parsed = await parseFile(file);
+  let parsed: { headers: string[]; rows: Record<string, string>[]; batchMeta?: { title: string; startDate: string; endDate: string } };
+  try {
+    parsed = await parseFile(file);
+  } catch (e) {
+    return { error: `Parse failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
   if (!parsed.rows.length) return { error: "No data rows found." };
 
   const supabase = await createServerClient();
@@ -55,7 +60,12 @@ export async function uploadSourceAction(
     batchMeta: parsed.batchMeta,
   };
 
-  const result = await runSync([config]);
+  let result: SyncResult;
+  try {
+    result = await runSync([config]);
+  } catch (e) {
+    return { error: `Sync failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/sources");
