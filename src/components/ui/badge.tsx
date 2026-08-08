@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 
 export const Badge = React.forwardRef<
   HTMLDivElement,
-  { variant?: "default" | "success" | "warning" | "destructive" | "outline" } & React.HTMLAttributes<HTMLDivElement>
+  { variant?: "default" | "success" | "warning" | "destructive" | "outline" | "secondary" } & React.HTMLAttributes<HTMLDivElement>
 >(({ className, variant = "default", ...props }, ref) => {
   const variants = {
     default: "border-transparent bg-primary text-primary-foreground",
@@ -11,6 +11,7 @@ export const Badge = React.forwardRef<
     warning: "border-transparent bg-amber-500 text-white",
     destructive: "border-transparent bg-destructive text-destructive-foreground",
     outline: "text-foreground border",
+    secondary: "border-transparent bg-secondary text-secondary-foreground",
   };
   return <div ref={ref} className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs", variants[variant], className)} {...props} />;
 });

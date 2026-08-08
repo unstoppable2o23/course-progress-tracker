@@ -9,6 +9,63 @@ import { LIVE_SESSIONS } from "@/lib/utils";
 
 export type UploadState = { ok?: boolean; error?: string; rows?: number };
 
+export type PreviewState = {
+  ok?: boolean;
+  error?: string;
+  headers?: string[];
+  sourceName?: string;
+  fileName?: string;
+  rowCount?: number;
+  type?: string;
+  batchMeta?: { title: string; startDate: string; endDate: string };
+};
+
+export async function previewUploadAction(
+  _prev: PreviewState,
+  formData: FormData
+): Promise<PreviewState> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { error: "Not authorized. Please log in as admin." };
+  }
+
+  const file = formData.get("file") as File | null;
+  if (!file) return { error: "No file selected." };
+
+  const type = String(formData.get("type")) as "master" | "ucla" | "live";
+  const name = String(formData.get("name") || "").trim();
+  if (!name) return { error: "Source name is required." };
+
+  const supabase = await createServerClient();
+
+  // Upload to storage
+  const filePath = `${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage
+    .from("uploads")
+    .upload(filePath, file, { upsert: true });
+  if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
+
+  // Download and parse
+  const { data: fileData, error: dlError } = await supabase.storage
+    .from("uploads")
+    .download(filePath);
+  if (dlError || !fileData) return { error: `Download failed: ${dlError?.message}` };
+
+  const parsed = await parseBlob(fileData, file.name);
+  if (!parsed.rows.length) return { error: "No data rows found." };
+
+  return {
+    ok: true,
+    headers: parsed.headers,
+    sourceName: name,
+    fileName: file.name,
+    rowCount: parsed.rows.length,
+    type,
+    batchMeta: parsed.batchMeta,
+  };
+}
+
 export async function uploadSourceAction(
   _prev: UploadState,
   formData: FormData
