@@ -11,9 +11,20 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     .from("app_users")
     .select("role, is_active")
     .eq("email", user.email)
-    .single();
+    .maybeSingle();
 
-  if (!appUser?.is_active) redirect("/login");
+  if (!appUser?.is_active) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="text-xl font-semibold">Access Pending</h1>
+          <p className="text-sm text-muted-foreground">
+            Your account ({user.email}) is not active. Contact an administrator.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return <AppShell role={appUser.role}>{children}</AppShell>;
 }

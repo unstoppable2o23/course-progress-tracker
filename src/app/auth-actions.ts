@@ -3,13 +3,13 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 
-export async function loginAction(_prev: { error?: string }, formData: FormData) {
+export async function loginAction(_prev: { error?: string, success?: boolean }, formData: FormData) {
   const email = String(formData.get("email") || "");
   const password = String(formData.get("password") || "");
   const supabase = await createServerClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: "Invalid email or password." };
-  redirect("/dashboard");
+  return { success: true };
 }
 
 export async function logoutAction() {

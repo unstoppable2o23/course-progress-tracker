@@ -17,8 +17,8 @@ export function LoginForm() {
       action={async (formData) => {
         setError(undefined);
         const result = await loginAction({ error: undefined }, formData);
-        if ("error" in result && result.error) setError(result.error);
-        else router.push("/dashboard");
+        if (result?.error) setError(result.error);
+        else if (result?.success) router.push("/dashboard");
       }}
     >
       <Card>
