@@ -7,6 +7,35 @@ export interface ParsedFile {
   batchMeta?: { title: string; startDate: string; endDate: string };
 }
 
+export async function parseBlob(blob: Blob, fileName: string): Promise<ParsedFile> {
+  const name = fileName.toLowerCase();
+  if (name.endsWith(".csv")) {
+    const text = await blob.text();
+    const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
+    return gridToRows(parsed.data);
+  }
+  return parseXlsxBlob(blob);
+}
+
+async function parseXlsxBlob(blob: Blob): Promise<ParsedFile> {
+  const { default: ExcelJS } = await import("exceljs");
+  const buffer = await blob.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new Error("Empty spreadsheet.");
+  const values: string[][] = [];
+  sheet.eachRow((row) => {
+    const cells = row.values as unknown;
+    values.push(
+      Array.isArray(cells)
+        ? cells.slice(1).map((v) => (v == null ? "" : String(v)))
+        : []
+    );
+  });
+  return gridToRows(values);
+}
+
 export async function parseFile(file: File): Promise<ParsedFile> {
   const name = file.name.toLowerCase();
 

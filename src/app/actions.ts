@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireUser } from "@/app/auth-actions";
 import { createServerClient } from "@/lib/supabase/server";
-import { parseFile } from "@/lib/sync/parse";
+import { parseBlob } from "@/lib/sync/parse";
 import { runSync, type SourceConfig, type SyncResult } from "@/lib/sync/engine";
 import { LIVE_SESSIONS } from "@/lib/utils";
 
@@ -22,10 +22,6 @@ export async function uploadSourceAction(
   const file = formData.get("file") as File | null;
   if (!file) return { error: "No file selected." };
 
-  if (file.size > 4 * 1024 * 1024) {
-    return { error: "File is too large (max 4 MB). Please split into smaller files or remove unused rows/columns." };
-  }
-
   const type = String(formData.get("type")) as "master" | "ucla" | "live";
   const name = String(formData.get("name") || "").trim();
   const emailColumn = String(formData.get("emailColumn") || "").trim();
@@ -38,30 +34,35 @@ export async function uploadSourceAction(
 
   if (!name || !emailColumn) return { error: "Name and email column are required." };
 
-  let parsed: { headers: string[]; rows: Record<string, string>[]; batchMeta?: { title: string; startDate: string; endDate: string } };
-  try {
-    parsed = await parseFile(file);
-  } catch (e) {
-    return { error: `Parse failed: ${e instanceof Error ? e.message : String(e)}` };
-  }
+  const supabase = await createServerClient();
+
+  // Upload to Supabase Storage (no size limit)
+  const filePath = `${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage
+    .from("uploads")
+    .upload(filePath, file, { upsert: true });
+  if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
+
+  // Download and parse
+  const { data: fileData, error: dlError } = await supabase.storage
+    .from("uploads")
+    .download(filePath);
+  if (dlError || !fileData) return { error: `Download failed: ${dlError?.message}` };
+
+  const blob = fileData;
+  const parsed = await parseBlob(blob, file.name);
   if (!parsed.rows.length) return { error: "No data rows found." };
 
-  const supabase = await createServerClient();
-  let source;
-  try {
-    const { data, error } = await supabase
-      .from("sources")
-      .insert({ name, type, file_name: file.name })
-      .select()
-      .single();
-    if (error) return { error: `Database error: ${error.message}` };
-    source = data;
-  } catch (e) {
-    return { error: `Insert failed: ${e instanceof Error ? e.message : String(e)}` };
-  }
+  // Create source record
+  const { data: source, error: srcError } = await supabase
+    .from("sources")
+    .insert({ name, type, file_name: file.name })
+    .select()
+    .single();
+  if (srcError) return { error: `Database error: ${srcError.message}` };
 
   const config: SourceConfig = {
-    sourceId: source!.id,
+    sourceId: source.id,
     name,
     type,
     rows: parsed.rows,
