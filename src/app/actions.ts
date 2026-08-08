@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin, requireUser } from "@/app/auth-actions";
 import { createServerClient } from "@/lib/supabase/server";
 import { parseFile } from "@/lib/sync/parse";
-import { runSync, type SourceConfig } from "@/lib/sync/engine";
+import { runSync, type SourceConfig, type SyncResult } from "@/lib/sync/engine";
 import { LIVE_SESSIONS } from "@/lib/utils";
 
 export type UploadState = { ok?: boolean; error?: string; rows?: number };
